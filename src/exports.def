@@ -1,0 +1,37 @@
+LIBRARY ExtIO_AirSpyHFplus
+EXPORTS
+    CloseHW
+    GetHWLO
+    GetHWSR
+    GetStatus
+    InitHW
+    OpenHW
+    SetCallback
+    SetHWLO
+    ShowGUI
+    HideGUI
+    SwitchGUI
+    StartHW
+    StopHW
+   
+;    VersionInfo
+    ExtIoSDRInfo
+
+; Samplerate / Bandwidth:
+    ExtIoGetSrates
+;    ExtIoGetBandwidth
+    ExtIoGetActualSrateIdx
+    ExtIoSetSrate
+
+; Settings
+    ExtIoGetSetting
+    ExtIoSetSetting
+
+;    GetAttenuators
+;    GetActualAttIdx
+;    SetAttenuator
+
+
+;    ExtIoGetAGCs
+;    ExtIoGetActualAGCidx
+;    ExtIoSetAGC
