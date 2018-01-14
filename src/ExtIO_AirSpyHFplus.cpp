@@ -131,6 +131,7 @@ static void updateDeviceListCB(HWND hwndDlg, bool bReFillCB = true);
 static void updateSampleRatesCB(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void updateGPIOCBs(HWND hwndDlg);
 static void updateDevVerStrCB(HWND hwndDlg);
+static void updateLibVerStrCB(HWND hwndDlg);
 static void updateFreqCorrCB(HWND hwndDlg);
 static void updateStatusCB(HWND hwndDlg);
 static void setStatusCB(const char * text, bool bError = false);
@@ -151,14 +152,8 @@ static char acLogMsg[1024];
 
 #define SDRLOGTXT( A, TEXT )	\
 	do {												\
-		if ( ExtIOCallBack )							\
-		{												\
-			if (SDRsupportsLogging) {					\
-				ExtIOCallBack(-1, A, 0, TEXT );			\
-			} else if ( A != extHw_MSG_ERRDLG ) {		\
-				::MessageBoxA(NULL, TEXT, "Error", 0);	\
-			}											\
-		}												\
+		if ( ExtIOCallBack && SDRsupportsLogging )		\
+			ExtIOCallBack(-1, A, 0, TEXT );			\
 		if (extHw_MSG_ERRDLG == A)						\
 			setStatusCB(TEXT, true);					\
 	} while (0)
@@ -243,6 +238,7 @@ bool  LIBEXTIO_API __stdcall OpenHW()
 	}
 
 	updateDeviceListCB(h_dialog);
+	updateLibVerStrCB(h_dialog);
 	updateSampleRatesCB(h_dialog, false, false);
 	updateFreqCorrCB(h_dialog);
 
@@ -791,6 +787,13 @@ static void updateDevVerStrCB(HWND hwndDlg)
 	Static_SetText(GetDlgItem(hwndDlg, IDC_DEV_VERSTRING), dev_versionStrT);
 }
 
+static void updateLibVerStrCB(HWND hwndDlg)
+{
+	TCHAR tempStr[256];
+	_stprintf_s(tempStr, 127, TEXT("%d.%d.%d"), lib_version.major_version, lib_version.minor_version, lib_version.revision);
+	Static_SetText(GetDlgItem(hwndDlg, IDC_LIB_VERSTRING), tempStr);
+}
+
 static void updateFreqCorrCB(HWND hwndDlg)
 {
 	TCHAR tempStr[256];
@@ -845,6 +848,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 			updateSampleRatesCB(hwndDlg, false);
 			updateGPIOCBs(hwndDlg);
 			updateDevVerStrCB(hwndDlg);
+			updateLibVerStrCB(hwndDlg);
 			updateFreqCorrCB(hwndDlg);
 			updateStatusCB(hwndDlg);
 
@@ -859,6 +863,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 				updateSampleRatesCB(hwndDlg, false);
 				updateGPIOCBs(hwndDlg);
 				updateDevVerStrCB(hwndDlg);
+				updateLibVerStrCB(hwndDlg);
 				updateFreqCorrCB(hwndDlg);
 				updateStatusCB(hwndDlg);
 			}
@@ -872,6 +877,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 					updateSampleRatesCB(hwndDlg, false);
 					updateGPIOCBs(hwndDlg);
 					updateDevVerStrCB(hwndDlg);
+					updateLibVerStrCB(hwndDlg);
 					updateFreqCorrCB(hwndDlg);
 					updateStatusCB(hwndDlg);
 					return TRUE;

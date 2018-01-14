@@ -14,3 +14,4 @@
 #define IDC_GPIOC                               1008
 #define IDC_GPIOD                               1009
 #define IDC_STATUS                              1010
+#define IDC_LIB_VERSTRING                       1011

@@ -7,6 +7,30 @@
 #include <richedit.h>
 #include "resource.h"
 
+#define VER_FILEVERSION             2018,3
+#define VER_FILEVERSION_STR         "2018.3\0"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     VER_FILEVERSION
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "FileDescription",  "ExtIO for AirSpy HF+ receiver\0"
+            VALUE "FileVersion",      VER_FILEVERSION_STR
+            VALUE "LegalCopyright",   "(c)Hayati Ayguen, LICENSE: GPLv2"
+            VALUE "OriginalFilename", "ExtIO_AirSpyHFplus.DLL"
+        END
+    END
+
+
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", LANG_NEUTRAL, 1252
+    END
+END
+
 //
 // Dialog resources
 //
@@ -14,16 +38,19 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 IDD_EXTIO_SETTINGS DIALOG 0, 0, 170, 200
 STYLE DS_3DLOOK | DS_CENTER | DS_MODALFRAME | DS_SHELLFONT | WS_CAPTION | WS_VISIBLE | WS_POPUP | WS_SYSMENU
 EXSTYLE WS_EX_TOPMOST
-CAPTION "ExtIO_AirSpyHFplus.DLL v2018.2"
+CAPTION "ExtIO_AirSpyHFplus.DLL v2018.3"
 FONT 8, "Ms Shell Dlg"
 {
     LTEXT           "Device Serial:", IDC_STATIC, 7, 10, 150, 8, SS_LEFT
     COMBOBOX        IDC_DEV_SERIAL, 7, 20, 150, 13, CBS_DROPDOWNLIST  | CBS_HASSTRINGS
 
-    LTEXT           "Device Version:", IDC_STATIC, 7, 40, 150, 8, SS_LEFT
-    LTEXT           "-", IDC_DEV_VERSTRING, 7, 50, 150, 8, SS_LEFT
+    LTEXT           "Device version:", IDC_STATIC, 7, 40, 70, 8, SS_LEFT
+    LTEXT           "-", IDC_DEV_VERSTRING, 7, 50, 70, 8, SS_LEFT
 
-    LTEXT           "A/D Sample Rate:", IDC_STATIC, 7, 70, 150, 8, SS_LEFT
+    LTEXT           "AirSpyHF lib version:", IDC_STATIC, 75, 40, 70, 8, SS_LEFT
+    LTEXT           "-", IDC_LIB_VERSTRING, 75, 50, 70, 8, SS_LEFT
+
+    LTEXT           "Sample Rate:", IDC_STATIC, 7, 70, 150, 8, SS_LEFT
     COMBOBOX        IDC_SAMPLERATE, 7, 80, 150, 13, CBS_DROPDOWNLIST | CBS_HASSTRINGS
 
     LTEXT           "Frequency Calibration / Correction:", IDC_STATIC, 7, 100, 110, 8, SS_LEFT
