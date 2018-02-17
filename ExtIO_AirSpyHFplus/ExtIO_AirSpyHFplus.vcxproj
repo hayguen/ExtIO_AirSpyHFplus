@@ -46,8 +46,8 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <IncludePath>..\..\airspyhf\libairspyhf\src;..\..\airspyhf\pthreads-w32-2-9-1-release\pthreads.2;..\..\airspyhf\libusbx\libusb;$(IncludePath)</IncludePath>
-    <LibraryPath>..\..\airspyhf\pthreads-w32-2-9-1-release\pthreads.2;..\..\airspyhf\libusbx\Win32\Release\lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>..\..\airspyhf\libairspyhf\src;..\..\libs\pthreads-w32-2-9-1-release\pthreads.2;..\..\libs\libusbx\libusb;$(IncludePath)</IncludePath>
+    <LibraryPath>..\..\libs\pthreads-w32-2-9-1-release\pthreads.2;..\..\libs\libusbx\Win32\Release\lib;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
