@@ -49,7 +49,8 @@
 #define MAX_PPB		( 200 * 1000)
 #define MIN_PPB		(-200 * 1000)
 
-static airspyhf_lib_version_t lib_version;
+static char airspyhf_lib_gitver[128] = "\0";
+
 
 #define MAX_NUM_DEVS	8
 
@@ -99,7 +100,7 @@ static volatile long LO_Frequency = 10 * 1000 * 1000L;	// default: 10 MHz
 
 static volatile int SampleRateIdx = 0;		// default = 2.3 MSps
 
-static volatile int FreqCorrPPB = 0;
+static volatile int32_t FreqCorrPPB = 0;
 
 // GPIO Pins 0 - 3
 static volatile int gpioA = 0;
@@ -215,6 +216,21 @@ static void setupDevice()
 	airspyhf_set_user_output(dev, AIRSPYHF_USER_OUTPUT_2, (gpioC ? AIRSPYHF_USER_OUTPUT_HIGH : AIRSPYHF_USER_OUTPUT_LOW));
 	airspyhf_set_user_output(dev, AIRSPYHF_USER_OUTPUT_3, (gpioD ? AIRSPYHF_USER_OUTPUT_HIGH : AIRSPYHF_USER_OUTPUT_LOW));
 
+	// set frequency correction
+	int32_t prev = FreqCorrPPB;
+	int32_t value = FreqCorrPPB;
+	if (AIRSPYHF_SUCCESS == airspyhf_get_calibration(dev, &value))
+	{
+		FreqCorrPPB = value;
+		if (h_dialog)
+			updateFreqCorrCB(h_dialog);
+	}
+	else
+	{
+		FreqCorrPPB = prev;
+		airspyhf_set_calibration(dev, FreqCorrPPB);
+	}
+
 	// clear i/q buffer
 	extio_sample_buffer_size = 0;
 }
@@ -224,9 +240,11 @@ extern "C"
 bool  LIBEXTIO_API __stdcall OpenHW()
 {
 	SDRLOGTXT(extHw_MSG_DEBUG, "OpenHW()");
+	airspyhf_lib_version_t lib_version;
 	airspyhf_lib_version(&lib_version);
-	SDRLOG(extHw_MSG_DEBUG, "OpenHW(): libairspyhf version %d.%d.%d", lib_version.major_version, lib_version.minor_version, lib_version.revision);
-
+	snprintf(airspyhf_lib_gitver, 127, "%d.%d.%d"
+		, lib_version.major_version, lib_version.minor_version, lib_version.revision);
+	SDRLOG(extHw_MSG_DEBUG, "OpenHW(): libairspyhf version '%s'", airspyhf_lib_gitver);
 	if (!h_dialog)
 	{
 		h_dialog = CreateDialog(hInst, MAKEINTRESOURCE(IDD_EXTIO_SETTINGS), NULL, (DLGPROC)MainDlgProc);
@@ -542,7 +560,6 @@ int   LIBEXTIO_API __stdcall ExtIoGetSetting(int idx, char * description, char *
 extern "C"
 void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value)
 {
-	int tempInt;
 	SDRcalledSettings = true;
 	switch (ConfigIdx(idx))
 	{
@@ -556,13 +573,8 @@ void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value)
 		SampleRateIdx = atoi(value);
 		return;
 	case CFG_FREQ_CORR_PPB:
-		tempInt = atoi(value);
-		if (MIN_PPB <= tempInt && tempInt <= MAX_PPB)
-			FreqCorrPPB = tempInt;
-		else if (tempInt < MIN_PPB)
-			FreqCorrPPB = MIN_PPB;
-		else if (tempInt > MAX_PPB)
-			FreqCorrPPB = MAX_PPB;
+		// don't use this value from settings
+		FreqCorrPPB = 0;
 		return;
 	case CFG_GPIO_A:	gpioA = atoi(value) ? 1 : 0;	return;
 	case CFG_GPIO_B:	gpioB = atoi(value) ? 1 : 0;	return;
@@ -825,7 +837,7 @@ static void updateDevVerStrCB(HWND hwndDlg)
 static void updateLibVerStrCB(HWND hwndDlg)
 {
 	TCHAR tempStr[256];
-	_stprintf_s(tempStr, 127, TEXT("%d.%d.%d"), lib_version.major_version, lib_version.minor_version, lib_version.revision);
+	_stprintf_s(tempStr, 255, TEXT("%S"), airspyhf_lib_gitver);
 	Static_SetText(GetDlgItem(hwndDlg, IDC_LIB_VERSTRING), tempStr);
 }
 
@@ -939,6 +951,30 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 						SDRLOG(extHw_MSG_DEBUG, "Dialog: ppb changed to '%s' --> %d ppb", ppmC, FreqCorrPPB);
 						if (dev)
 							airspyhf_set_calibration(dev, FreqCorrPPB);
+					}
+					return TRUE;
+				case IDC_SAVE_PPB:
+					if (GET_WM_COMMAND_CMD(wParam, lParam) == BN_CLICKED)
+					{
+						if (dev)
+						{
+							int is_streaming = airspyhf_is_streaming(dev);
+							if (is_streaming)
+							{
+								// airspyhf_flash_calibration() requires stopped streaming!
+								airspyhf_stop(dev);
+								::Sleep(200);
+							}
+
+							int ret = airspyhf_flash_calibration(dev);
+							if (ret != AIRSPYHF_SUCCESS)
+								::MessageBoxA(hwndDlg, "Error writing ppb value to Flash", "Error", MB_OK);
+
+							if (is_streaming)
+								airspyhf_start(dev, airspyhf_sample_block_cb, NULL);
+						}
+						else
+							::MessageBoxA(hwndDlg, "No device to Flash", "Error", MB_OK);
 					}
 					return TRUE;
 

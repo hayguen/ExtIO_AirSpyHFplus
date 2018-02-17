@@ -15,3 +15,4 @@
 #define IDC_GPIOD                               1009
 #define IDC_STATUS                              1010
 #define IDC_LIB_VERSTRING                       1011
+#define IDC_SAVE_PPB                            1012
