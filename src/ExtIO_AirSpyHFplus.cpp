@@ -43,6 +43,8 @@
 	#define snprintf  _snprintf
 #endif
 
+#define EXTIO_BLOCKLEN_IN_IQ_FRAMES		8192
+
 // allow up to +/- 200 ppm = +/- 200 000 ppb
 #define MAX_PPB		( 200 * 1000)
 #define MIN_PPB		(-200 * 1000)
@@ -83,7 +85,6 @@ static uint32_t	combo_srates[EXTIO_MAX_SRATE_VALUES];
 static int n_srates = 0;
 static extHWtypeT extHWtype = exthwUSBfloat32;  /* default ExtIO type 16-bit samples */
 
-static int last_sample_count = 0;
 static uint64_t dropped_sample_count = 0;
 
 // forward
@@ -105,6 +106,10 @@ static volatile int gpioA = 0;
 static volatile int gpioB = 0;
 static volatile int gpioC = 0;
 static volatile int gpioD = 0;
+
+
+static airspyhf_complex_float_t extio_sample_buffer[EXTIO_BLOCKLEN_IN_IQ_FRAMES * 2];	// 2 for I and Q. 2 times
+static int extio_sample_buffer_size = 0;
 
 
 // Thread handle
@@ -210,8 +215,8 @@ static void setupDevice()
 	airspyhf_set_user_output(dev, AIRSPYHF_USER_OUTPUT_2, (gpioC ? AIRSPYHF_USER_OUTPUT_HIGH : AIRSPYHF_USER_OUTPUT_LOW));
 	airspyhf_set_user_output(dev, AIRSPYHF_USER_OUTPUT_3, (gpioD ? AIRSPYHF_USER_OUTPUT_HIGH : AIRSPYHF_USER_OUTPUT_LOW));
 
-	// set frequency correction
-	airspyhf_set_calibration(dev, FreqCorrPPB);
+	// clear i/q buffer
+	extio_sample_buffer_size = 0;
 }
 
 
@@ -250,7 +255,9 @@ bool  LIBEXTIO_API __stdcall OpenHW()
 	{
 		retLast = airspyhf_version_string_read(dev, dev_versionStr, 128);
 		if (AIRSPYHF_SUCCESS == retLast)
+		{
 			SDRLOG(extHw_MSG_DEBUG, "OpenHW(): device version '%s'", dev_versionStr);
+		}
 		else
 			snprintf(dev_versionStr, 127, "<Error>");
 
@@ -329,7 +336,7 @@ long LIBEXTIO_API __stdcall SetHWLO(long freq)
 extern "C"
 int LIBEXTIO_API __stdcall StartHW(long freq)
 {
-	int numIQpairs = (1024 * 16);	//  see 'SAMPLES_TO_TRANSFER' airspyhf.c
+	const int numIQpairs = EXTIO_BLOCKLEN_IN_IQ_FRAMES;
 	SDRLOGTXT(extHw_MSG_DEBUG, "StartHW()");
 	if (dev)
 		setStatusCB("");
@@ -683,13 +690,41 @@ int airspyhf_sample_block_cb(airspyhf_transfer_t* transfer_fn)
 
 	if (!dropped_sample_count && transfer_fn->dropped_samples)
 		SDRLOG(extHw_MSG_ERROR, "airspyhf_sample_block_cb(): DROPPED %u SAMPLES!!! Not logging further drops!", unsigned(transfer_fn->dropped_samples));
-	if (last_sample_count != transfer_fn->sample_count)
-		SDRLOG(extHw_MSG_DEBUG, "airspyhf_sample_block_cb(): block size %d I/Q pairs.", transfer_fn->sample_count);
+
+	//if (last_sample_count != transfer_fn->sample_count)
+	//	SDRLOG(extHw_MSG_DEBUG, "airspyhf_sample_block_cb(): block size %d I/Q pairs.", transfer_fn->sample_count);
 
 	dropped_sample_count += transfer_fn->dropped_samples;
-	last_sample_count = transfer_fn->sample_count;
+
 	if (ExtIOCallBack)
-		ExtIOCallBack(last_sample_count, 0, 0, transfer_fn->samples);
+	{
+		const airspyhf_complex_float_t * pSrc = transfer_fn->samples;	// source are new I/Q frames
+		if (extio_sample_buffer_size)
+		{
+			memcpy(&extio_sample_buffer[extio_sample_buffer_size], pSrc, transfer_fn->sample_count * sizeof(airspyhf_complex_float_t));
+			extio_sample_buffer_size += transfer_fn->sample_count;
+			pSrc = &extio_sample_buffer[0];		// buffer is new source
+		}
+		else
+			extio_sample_buffer_size = transfer_fn->sample_count;
+
+		// transmit as much as possible from pSrc/extio_sample_buffer_size
+		int iCbOffset = 0;
+		while (iCbOffset + EXTIO_BLOCKLEN_IN_IQ_FRAMES <= extio_sample_buffer_size)
+		{
+			ExtIOCallBack(EXTIO_BLOCKLEN_IN_IQ_FRAMES, 0, 0, const_cast<airspyhf_complex_float_t *>(&pSrc[iCbOffset]));
+			iCbOffset += EXTIO_BLOCKLEN_IN_IQ_FRAMES;
+		}
+		// move remaining data to buffer
+		extio_sample_buffer_size -= iCbOffset;		// this is remaining amount of I/Q frames
+		if (extio_sample_buffer_size)
+			memmove(&extio_sample_buffer[0], &pSrc[iCbOffset], extio_sample_buffer_size * sizeof(airspyhf_complex_float_t));
+	}
+	else
+	{
+		// no callback? => clear buffer
+		extio_sample_buffer_size = 0;
+	}
 
 	return 0;
 }
