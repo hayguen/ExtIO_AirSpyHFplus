@@ -89,7 +89,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>libusb-1.0.lib;pthread.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>..\src\exports.def</ModuleDefinitionFile>
-      <Version>2018.3</Version>
+      <Version>2018.4</Version>
       <AssemblyDebug>false</AssemblyDebug>
       <StripPrivateSymbols>/PDBSTRIPPED</StripPrivateSymbols>
     </Link>

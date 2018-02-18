@@ -16,3 +16,9 @@
 #define IDC_STATUS                              1010
 #define IDC_LIB_VERSTRING                       1011
 #define IDC_SAVE_PPB                            1012
+#define IDC_LNA_PREAMP                          1013
+#define IDC_AGC_ATTENS                          1014
+#define IDC_AGC_THRESHOLD                       1015
+#define IDC_MGC_ATTENS                          1016
+#define IDC_ATT_TEXT                            1017
+

@@ -45,6 +45,14 @@
 
 #define EXTIO_BLOCKLEN_IN_IQ_FRAMES		8192
 
+#define STOP_RESTART_FOR_PPB		1
+#define STOP_RESTART_FOR_LNA		0
+#define STOP_RESTART_FOR_MGC_ATT	0
+#define STOP_RESTART_FOR_AGC_THRESH	0
+#define STOP_RESTART_FOR_AGC		0
+#define STOP_RESTART_SLEEP_MS		300
+
+
 // allow up to +/- 200 ppm = +/- 200 000 ppb
 #define MAX_PPB		( 200 * 1000)
 #define MIN_PPB		(-200 * 1000)
@@ -100,6 +108,12 @@ static volatile long LO_Frequency = 10 * 1000 * 1000L;	// default: 10 MHz
 
 static volatile int SampleRateIdx = 0;		// default = 2.3 MSps
 
+static volatile int supportsExtendedFunctions = 1;
+static volatile int gLNA = 0;		// 0 / 1
+static volatile int gAGC = 0;		// 0 / 1
+static volatile int gAgcThresholdIdx = 0;	// 0 / 1
+static volatile int gAttenIdx = 0;	// 0 .. 8
+
 static volatile int32_t FreqCorrPPB = 0;
 
 // GPIO Pins 0 - 3
@@ -140,7 +154,16 @@ static void updateDevVerStrCB(HWND hwndDlg);
 static void updateLibVerStrCB(HWND hwndDlg);
 static void updateFreqCorrCB(HWND hwndDlg);
 static void updateStatusCB(HWND hwndDlg);
+static void updateLNA(HWND hwndDlg, bool callback);
+static void updateAGC(HWND hwndDlg, bool callback, bool bReFillCB = true);
+static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB = true);
+static void updateMGCAtten(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void setStatusCB(const char * text, bool bError = false);
+
+static void setLNA();
+static void setMGCAtten();
+static void setAgcThreshold();
+static void setAGC();
 
 extern "C" void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value);
 extern "C" int   LIBEXTIO_API __stdcall ExtIoGetSetting(int idx, char * description, char * value);
@@ -208,6 +231,48 @@ int LIBEXTIO_API __stdcall GetStatus()
 }
 
 
+static void processFirmwareRevision()
+{
+	// static char  dev_versionStr[128];
+	char tempStr[129];
+	strncpy(tempStr, dev_versionStr, 128);
+
+	// assume that firmware DOES support extended AGC functions
+	supportsExtendedFunctions = 1;
+
+	// R<number>.<number>[.<number>.<number>]
+	if (tempStr[0] == 'R')
+	{
+		char *majorStr = strtok(&tempStr[1], ".");
+		char *minorStr = majorStr ? strtok(nullptr, ".") : nullptr;
+		if (majorStr && minorStr)
+		{
+			int majorV = atoi(majorStr);
+			int minorV = atoi(minorStr);
+			if (majorV > 0 && minorV >= 0)
+			{
+				supportsExtendedFunctions = ((majorV == 1 && minorV >= 3) || (majorV > 1)) ? 1 : 0;
+				SDRLOG(extHw_MSG_DEBUG, "parsed firmware version is %d.%d %s extended functions"
+					, majorV, minorV
+					, (supportsExtendedFunctions ? "supporting" : "not supporting")
+					);
+			}
+		}
+	}
+
+	if (!supportsExtendedFunctions)
+	{
+		gAGC = 1;
+	}
+
+	if (h_dialog)
+	{
+		updateLNA(h_dialog, false);
+		updateAGC(h_dialog, false, false);
+	}
+}
+
+
 static void setupDevice()
 {
 	// initialize GPIOs
@@ -233,6 +298,30 @@ static void setupDevice()
 
 	// clear i/q buffer
 	extio_sample_buffer_size = 0;
+
+	processFirmwareRevision();
+
+	if (supportsExtendedFunctions)
+	{
+		airspyhf_set_hf_lna(dev, uint8_t(gLNA));
+		if (!gAGC)
+			airspyhf_set_hf_agc_threshold(dev, uint8_t(0));
+		else
+			airspyhf_set_hf_att(dev, uint8_t(0));
+
+		airspyhf_set_hf_agc(dev, uint8_t(gAGC));
+
+		if (gLNA)
+			airspyhf_set_hf_agc_threshold(dev, uint8_t(gAgcThresholdIdx));
+		else
+			airspyhf_set_hf_att(dev, uint8_t(gAttenIdx));
+	}
+
+	if (ExtIOCallBack)
+	{
+		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_AGCS);
+		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_RF_IF);
+	}
 }
 
 
@@ -273,9 +362,7 @@ bool  LIBEXTIO_API __stdcall OpenHW()
 	{
 		retLast = airspyhf_version_string_read(dev, dev_versionStr, 128);
 		if (AIRSPYHF_SUCCESS == retLast)
-		{
 			SDRLOG(extHw_MSG_DEBUG, "OpenHW(): device version '%s'", dev_versionStr);
-		}
 		else
 			snprintf(dev_versionStr, 127, "<Error>");
 
@@ -503,7 +590,19 @@ static const TCHAR * Serial2SNtextT(uint64_t deviceSerial)
 
 typedef enum
 {
-	CFG_SELECTED_DEVICE_SN = 0, CFG_AVAILABLE_DEVICE_SNS, CFG_SAMPLERATE, CFG_FREQ_CORR_PPB, CFG_GPIO_A, CFG_GPIO_B, CFG_GPIO_C, CFG_GPIO_D
+	CFG_SELECTED_DEVICE_SN = 0
+, CFG_AVAILABLE_DEVICE_SNS
+, CFG_SAMPLERATE
+, CFG_FREQ_CORR_PPB
+, CFG_GPIO_A
+, CFG_GPIO_B
+, CFG_GPIO_C
+, CFG_GPIO_D
+, CFG_LNA_PREAMP
+, CFG_AGC_ATTEN
+, CFG_AGC_THRESH
+, CFG_MGC_ATT
+, CFG_END
 } ConfigIdx;
 
 
@@ -551,6 +650,22 @@ int   LIBEXTIO_API __stdcall ExtIoGetSetting(int idx, char * description, char *
 		snprintf(description, 1024, "%s", "GPIO_3");
 		snprintf(value, 1024, "%d", gpioD);
 		return 0;
+	case CFG_LNA_PREAMP:
+		snprintf(description, 1024, "%s", "LNA/PreAmp Off/On");
+		snprintf(value, 1024, "%d", gLNA);
+		return 0;
+	case CFG_AGC_ATTEN:
+		snprintf(description, 1024, "%s", "AGC Off/On");
+		snprintf(value, 1024, "%d", gAGC);
+		return 0;
+	case CFG_AGC_THRESH:
+		snprintf(description, 1024, "%s", "AGC Threshold Low/High");
+		snprintf(value, 1024, "%d", gAgcThresholdIdx);
+		return 0;
+	case CFG_MGC_ATT:
+		snprintf(description, 1024, "%s", "MGC Attenuation Idx (6 dB per Step)");
+		snprintf(value, 1024, "%d", gAttenIdx);
+		return 0;
 	default:
 		return -1;	// ERROR
 	}
@@ -580,6 +695,13 @@ void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value)
 	case CFG_GPIO_B:	gpioB = atoi(value) ? 1 : 0;	return;
 	case CFG_GPIO_C:	gpioC = atoi(value) ? 1 : 0;	return;
 	case CFG_GPIO_D:	gpioD = atoi(value) ? 1 : 0;	return;
+	case CFG_LNA_PREAMP:	gLNA = atoi(value) ? 1 : 0;	return;
+	case CFG_AGC_ATTEN:		gAGC = atoi(value) ? 1 : 0;	return;
+	case CFG_AGC_THRESH:	gAgcThresholdIdx = atoi(value) ? 1 : 0;	return;
+	case CFG_MGC_ATT:		gAttenIdx = atoi(value);
+		if (gAttenIdx < 0)		gAttenIdx = 0;
+		else if (gAttenIdx > 8)	gAttenIdx = 8;
+		return;
 	default:	;
 	}
 	return;
@@ -689,6 +811,158 @@ void LIBEXTIO_API  __stdcall ExtIoSDRInfo(int extSDRInfo, int additionalValue, v
 {
 	if (extSDRInfo == extSDR_supports_Logging)
 		SDRsupportsLogging = true;
+}
+
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoGetMGCs(int mgc_idx, float * gain)
+{
+	if (supportsExtendedFunctions)
+	{
+		switch (mgc_idx)
+		{
+		// sort by ascending gain: use idx 0 for lowest gain
+		case 0:	*gain = 0.0F;	return 0;
+		case 1:	*gain = 6.0F;	return 0;
+		default:	return 1;
+		}
+	}
+	return 1;
+}
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoGetActualMgcIdx(void)
+{
+	if (supportsExtendedFunctions)
+		return gLNA;
+	else
+		return -1;	// returns -1 on error
+}
+
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoSetMGC(int mgc_idx)
+{
+	if (supportsExtendedFunctions)
+	{
+		gLNA = mgc_idx;
+		setLNA();
+		if (h_dialog)
+			updateLNA(h_dialog, false);
+		return 0;
+	}
+	return -1;	// returns != 0 on error
+}
+
+
+extern "C"
+int LIBEXTIO_API  __stdcall GetAttenuators(int idx, float * attenuation)
+{
+	if (supportsExtendedFunctions)
+	{
+		if (!gAGC)
+		{
+			switch (idx)
+			{
+			case 0:	*attenuation = -48.0F;	return 0;
+			case 1:	*attenuation = -42.0F;	return 0;
+			case 2:	*attenuation = -36.0F;	return 0;
+			case 3:	*attenuation = -30.0F;	return 0;
+			case 4:	*attenuation = -24.0F;	return 0;
+			case 5:	*attenuation = -18.0F;	return 0;
+			case 6:	*attenuation = -12.0F;	return 0;
+			case 7:	*attenuation = -6.0F;	return 0;
+			case 8:	*attenuation = 0.0F;	return 0;
+			default:	return 1;
+			}
+		}
+		else
+		{
+			return 1;
+		}
+	}
+	return 1;
+}
+
+extern "C"
+int LIBEXTIO_API  __stdcall GetActualAttIdx(void)
+{
+	if (supportsExtendedFunctions)
+		if (!gAGC)
+			return 8 - gAttenIdx;
+	return -1;	// returns -1 on error
+}
+
+extern "C"
+int LIBEXTIO_API  __stdcall SetAttenuator(int idx)
+{
+	if (supportsExtendedFunctions && idx >= 0 && idx <= 8)
+	{
+		gAttenIdx = 8 - idx;
+		setMGCAtten();
+		if (h_dialog)
+			updateMGCAtten(h_dialog, false, false);
+		return 0;
+	}
+	return -1;	// returns != 0 on error
+}
+
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoGetAGCs(int agc_idx, char * text)
+{
+	if (supportsExtendedFunctions)
+	{
+		switch (agc_idx)
+		{
+		case 0: snprintf(text, 15, "%s", "MGC");	return 0;
+		case 1: snprintf(text, 15, "%s", "Low");	return 0;
+		case 2: snprintf(text, 15, "%s", "High");	return 0;
+		default:	return -1;
+		}
+	}
+	return -1;
+}
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoGetActualAGCidx(void)
+{
+	if (supportsExtendedFunctions)
+	{
+		if (!gAGC)
+			return 0;
+		else
+			return (gAgcThresholdIdx == 0) ? 1 : 2;
+	}
+	return -1;	// returns -1 on error
+}
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoSetAGC(int agc_idx)
+{
+	if (supportsExtendedFunctions)
+	{
+		switch (agc_idx)
+		{
+		case 0: gAGC = 0;	break;
+		case 1: gAGC = 1;	gAgcThresholdIdx = 0;	break;
+		case 2: gAGC = 1;	gAgcThresholdIdx = 1;	break;
+		default:	return -1;
+		}
+		setAGC();
+		if (h_dialog)
+			updateAGC(h_dialog, false, false);
+		return 0;
+	}
+	return -1;	// returns != 0 on error
+}
+
+extern "C"
+int LIBEXTIO_API  __stdcall ExtIoShowMGC(int agc_idx)
+{
+	if (supportsExtendedFunctions)
+		return 1;	// return 1, to continue showing MGC slider on AGC
+	return 0;		// return 0, is default for not showing MGC slider
 }
 
 
@@ -854,6 +1128,157 @@ static void updateStatusCB(HWND hwndDlg)
 	Static_SetText(GetDlgItem(hwndDlg, IDC_STATUS), statusStrT);
 }
 
+
+static inline int check_stop_restart(int check)
+{
+	if (check)
+	{
+		int is_streaming = airspyhf_is_streaming(dev);
+		if (is_streaming)
+		{
+			airspyhf_stop(dev);
+			::Sleep(STOP_RESTART_SLEEP_MS);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static inline void check_restart(int restart)
+{
+	if (restart)
+		airspyhf_start(dev, airspyhf_sample_block_cb, NULL);
+}
+
+
+
+static void updateLNA(HWND hwndDlg, bool callback)
+{
+	HWND hitem = GetDlgItem(hwndDlg, IDC_LNA_PREAMP);
+	Button_Enable(hitem, supportsExtendedFunctions ? TRUE : FALSE);
+	if (supportsExtendedFunctions)
+		Button_SetCheck(hitem, gLNA ? BST_CHECKED : BST_UNCHECKED);
+	else
+		Button_SetCheck(hitem, BST_UNCHECKED);
+
+	if (supportsExtendedFunctions && callback && ExtIOCallBack)
+		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_MGC);
+}
+
+static void setLNA()
+{
+	if (dev && supportsExtendedFunctions)
+	{
+		const int restart_streaming = check_stop_restart(STOP_RESTART_FOR_LNA);
+		airspyhf_set_hf_lna(dev, uint8_t(gLNA));
+		check_restart(restart_streaming);
+	}
+}
+
+
+static void updateAGC(HWND hwndDlg, bool callback, bool bReFillCB)
+{
+	updateAGCThresh(hwndDlg, callback, bReFillCB);
+	updateMGCAtten(hwndDlg, callback, bReFillCB);
+
+	HWND hitem = GetDlgItem(hwndDlg, IDC_AGC_ATTENS);
+	Button_Enable(hitem, supportsExtendedFunctions ? TRUE : FALSE);
+	if (supportsExtendedFunctions)
+		Button_SetCheck(hitem, gAGC ? BST_CHECKED : BST_UNCHECKED);
+	else
+		Button_SetCheck(hitem, BST_CHECKED);
+}
+
+static void setAGC()
+{
+	if (dev && supportsExtendedFunctions)
+	{
+		const int restart_streaming = check_stop_restart(STOP_RESTART_FOR_AGC);
+
+		airspyhf_set_hf_agc(dev, uint8_t(gAGC));
+
+		if (gAGC)
+			airspyhf_set_hf_agc_threshold(dev, uint8_t(gAgcThresholdIdx));
+		else
+			airspyhf_set_hf_att(dev, uint8_t(gAttenIdx));
+
+		if (ExtIOCallBack)
+		{
+			EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_AGC);
+			EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_RF_IF);
+		}
+
+		check_restart(restart_streaming);
+	}
+}
+
+
+static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB)
+{
+	HWND hitem = GetDlgItem(hwndDlg, IDC_AGC_THRESHOLD);
+	ComboBox_Enable(hitem, (supportsExtendedFunctions && gAGC) ? TRUE : FALSE);
+	if (bReFillCB)
+	{
+		ComboBox_ResetContent(hitem);
+		ComboBox_AddString(hitem, TEXT("LOW  Threshold"));
+		ComboBox_AddString(hitem, TEXT("HIGH Threshold"));
+	}
+	ComboBox_SetCurSel(hitem, gAgcThresholdIdx);
+
+	if (supportsExtendedFunctions && callback && ExtIOCallBack)
+		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_AGC);
+}
+
+static void setAgcThreshold()
+{
+
+	if (dev && supportsExtendedFunctions)
+	{
+		const int restart_streaming = check_stop_restart(STOP_RESTART_FOR_AGC_THRESH);
+		airspyhf_set_hf_agc_threshold(dev, uint8_t(gAgcThresholdIdx));
+		check_restart(restart_streaming);
+	}
+}
+
+
+static void updateMGCAtten(HWND hwndDlg, bool callback, bool bReFillCB)
+{
+	HWND hitem = GetDlgItem(hwndDlg, IDC_MGC_ATTENS);
+	HWND hitemTxt = GetDlgItem(hwndDlg, IDC_ATT_TEXT);
+	Static_Enable(hitemTxt, (supportsExtendedFunctions && !gAGC) ? TRUE : FALSE);
+	ComboBox_Enable(hitem, (supportsExtendedFunctions && !gAGC) ? TRUE : FALSE);
+	if (bReFillCB)
+	{
+		ComboBox_ResetContent(hitem);
+		ComboBox_AddString(hitem, TEXT("    0 dB"));
+		ComboBox_AddString(hitem, TEXT("    6 dB"));	// 1
+		ComboBox_AddString(hitem, TEXT("   12 dB"));	// 2
+		ComboBox_AddString(hitem, TEXT("   18 dB"));	// 3
+		ComboBox_AddString(hitem, TEXT("   24 dB"));	// 4
+		ComboBox_AddString(hitem, TEXT("   30 dB"));	// 5
+		ComboBox_AddString(hitem, TEXT("   36 dB"));	// 6
+		ComboBox_AddString(hitem, TEXT("   42 dB"));	// 7
+		ComboBox_AddString(hitem, TEXT("   48 dB"));	// 8
+	}
+	if (supportsExtendedFunctions && !gAGC)
+		ComboBox_SetCurSel(hitem, gAttenIdx);
+	else
+		ComboBox_SetCurSel(hitem, 0);
+
+	if (supportsExtendedFunctions && callback && ExtIOCallBack)
+		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_ATT);
+}
+
+static void setMGCAtten()
+{
+	if (dev && supportsExtendedFunctions)
+	{
+		const int restart_streaming = check_stop_restart(STOP_RESTART_FOR_MGC_ATT);
+		airspyhf_set_hf_att(dev, uint8_t(gAttenIdx));
+		check_restart(restart_streaming);
+	}
+}
+
 static void setStatusCB(const char * text, bool bError)
 {
 	snprintf(statusStr, 255, "%s", text);
@@ -896,6 +1321,8 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 			updateGPIOCBs(hwndDlg);
 			updateDevVerStrCB(hwndDlg);
 			updateLibVerStrCB(hwndDlg);
+			updateLNA(hwndDlg, false);
+			updateAGC(hwndDlg, false);
 			updateFreqCorrCB(hwndDlg);
 			updateStatusCB(hwndDlg);
 
@@ -911,6 +1338,8 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 				updateGPIOCBs(hwndDlg);
 				updateDevVerStrCB(hwndDlg);
 				updateLibVerStrCB(hwndDlg);
+				updateLNA(hwndDlg, false);
+				updateAGC(hwndDlg, false);
 				updateFreqCorrCB(hwndDlg);
 				updateStatusCB(hwndDlg);
 			}
@@ -958,20 +1387,13 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 					{
 						if (dev)
 						{
-							int is_streaming = airspyhf_is_streaming(dev);
-							if (is_streaming)
-							{
-								// airspyhf_flash_calibration() requires stopped streaming!
-								airspyhf_stop(dev);
-								::Sleep(200);
-							}
+							const int restart_streaming = check_stop_restart(STOP_RESTART_FOR_PPB);
 
 							int ret = airspyhf_flash_calibration(dev);
 							if (ret != AIRSPYHF_SUCCESS)
 								::MessageBoxA(hwndDlg, "Error writing ppb value to Flash", "Error", MB_OK);
 
-							if (is_streaming)
-								airspyhf_start(dev, airspyhf_sample_block_cb, NULL);
+							check_restart(restart_streaming);
 						}
 						else
 							::MessageBoxA(hwndDlg, "No device to Flash", "Error", MB_OK);
@@ -1032,6 +1454,47 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 						updateSampleRatesCB(hwndDlg, true, false);	// callback, no ReFill
                     }
 					return TRUE;
+
+				case IDC_LNA_PREAMP:
+					gLNA = (Button_GetCheck(GET_WM_COMMAND_HWND(wParam, lParam)) == BST_CHECKED) ? 1 : 0;
+					SDRLOG(extHw_MSG_DEBUG, "Dialog: LNA/PreAmp is now %s", (gLNA ? "On" : "Off"));
+					setLNA();
+					updateLNA(hwndDlg, true);
+					return TRUE;
+
+				case IDC_AGC_ATTENS:
+					gAGC = (Button_GetCheck(GET_WM_COMMAND_HWND(wParam, lParam)) == BST_CHECKED) ? 1 : 0;
+					SDRLOG(extHw_MSG_DEBUG, "Dialog: AGC is now %d == %s", gAGC, (gAGC ? "On" : "Off"));
+					setAGC();
+					updateAGC(hwndDlg, true, false);	// callback, no ReFill
+					return TRUE;
+
+				case IDC_AGC_THRESHOLD:
+					if (GET_WM_COMMAND_CMD(wParam, lParam) == CBN_SELCHANGE)
+					{
+						gAgcThresholdIdx = ComboBox_GetCurSel(GET_WM_COMMAND_HWND(wParam, lParam));
+						SDRLOG(extHw_MSG_DEBUG, "Dialog: AGC Threshold set to %d == %s"
+							, gAgcThresholdIdx
+							, gAgcThresholdIdx ? "high" : "low"
+							);
+						setAgcThreshold();
+						updateAGCThresh(hwndDlg, true, false);	// callback, no ReFill
+					}
+					return TRUE;
+
+				case IDC_MGC_ATTENS:
+					if (GET_WM_COMMAND_CMD(wParam, lParam) == CBN_SELCHANGE)
+					{
+						gAttenIdx = ComboBox_GetCurSel(GET_WM_COMMAND_HWND(wParam, lParam));
+						SDRLOG(extHw_MSG_DEBUG, "Dialog: ATTenuation set to %d == %d dB"
+							, gAttenIdx
+							, gAttenIdx * 6
+							);
+						setMGCAtten();
+						updateMGCAtten(hwndDlg, true, false);	// callback, no ReFill
+					}
+					return TRUE;
+
 				case IDC_GPIOA:
 					gpioA = (Button_GetCheck(GET_WM_COMMAND_HWND(wParam, lParam)) == BST_CHECKED) ? 1 : 0;
 					SDRLOG(extHw_MSG_DEBUG, "Dialog: GPIO 0 is now %s", (gpioA ? "Hi" : "Lo"));

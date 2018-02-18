@@ -27,11 +27,17 @@ EXPORTS
     ExtIoGetSetting
     ExtIoSetSetting
 
-;    GetAttenuators
-;    GetActualAttIdx
-;    SetAttenuator
+    ExtIoGetMGCs
+    ExtIoGetActualMgcIdx
+    ExtIoSetMGC
+
+    GetAttenuators
+    GetActualAttIdx
+    SetAttenuator
 
 
-;    ExtIoGetAGCs
-;    ExtIoGetActualAGCidx
-;    ExtIoSetAGC
+    ExtIoGetAGCs
+    ExtIoGetActualAGCidx
+    ExtIoSetAGC
+    ExtIoShowMGC
+
