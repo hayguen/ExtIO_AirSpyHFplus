@@ -147,6 +147,8 @@ static uint64_t SNtext2Serial(const char * text, bool setSelected);
 static const char * Serial2SNtextC(uint64_t deviceSerial);
 static const TCHAR * Serial2SNtextT(uint64_t deviceSerial);
 
+static void setDefaults();
+
 static void updateDeviceListCB(HWND hwndDlg, bool bReFillCB = true);
 static void updateSampleRatesCB(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void updateGPIOCBs(HWND hwndDlg);
@@ -190,11 +192,21 @@ static char acLogMsg[1024];
 #define SDRLOG( A, TEXTFMT, ... )	do { snprintf(acLogMsg, 1023, TEXTFMT, ##__VA_ARGS__); SDRLOGTXT(A, acLogMsg); } while (0)
 
 
+static void setDefaults()
+{
+	// defaults of old firmware versions < 1.3
+	gLNA = 1;
+	gAGC = 1;
+	gAgcThresholdIdx = 0;
+	gAttenIdx = 0;
+}
+
 extern "C"
 bool  LIBEXTIO_API __stdcall InitHW(char *name, char *model, int& type)
 {
 	if (!SDRcalledSettings)
 	{
+		setDefaults();
 		WinRegistry reg(WinRegistry::HKCU, "Software\\ExtIO_AirSpyHFplus", WinRegistry::OPEN);
 		if (reg.ok())
 		{
@@ -261,9 +273,7 @@ static void processFirmwareRevision()
 	}
 
 	if (!supportsExtendedFunctions)
-	{
-		gAGC = 1;
-	}
+		setDefaults();
 
 	if (h_dialog)
 	{
@@ -675,7 +685,10 @@ int   LIBEXTIO_API __stdcall ExtIoGetSetting(int idx, char * description, char *
 extern "C"
 void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value)
 {
+	if (!SDRcalledSettings)
+		setDefaults();
 	SDRcalledSettings = true;
+
 	switch (ConfigIdx(idx))
 	{
 	case CFG_SELECTED_DEVICE_SN:
@@ -1151,16 +1164,11 @@ static inline void check_restart(int restart)
 }
 
 
-
 static void updateLNA(HWND hwndDlg, bool callback)
 {
 	HWND hitem = GetDlgItem(hwndDlg, IDC_LNA_PREAMP);
 	Button_Enable(hitem, supportsExtendedFunctions ? TRUE : FALSE);
-	if (supportsExtendedFunctions)
-		Button_SetCheck(hitem, gLNA ? BST_CHECKED : BST_UNCHECKED);
-	else
-		Button_SetCheck(hitem, BST_UNCHECKED);
-
+	Button_SetCheck(hitem, gLNA ? BST_CHECKED : BST_UNCHECKED);
 	if (supportsExtendedFunctions && callback && ExtIOCallBack)
 		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_MGC);
 }
@@ -1180,13 +1188,9 @@ static void updateAGC(HWND hwndDlg, bool callback, bool bReFillCB)
 {
 	updateAGCThresh(hwndDlg, callback, bReFillCB);
 	updateMGCAtten(hwndDlg, callback, bReFillCB);
-
 	HWND hitem = GetDlgItem(hwndDlg, IDC_AGC_ATTENS);
 	Button_Enable(hitem, supportsExtendedFunctions ? TRUE : FALSE);
-	if (supportsExtendedFunctions)
-		Button_SetCheck(hitem, gAGC ? BST_CHECKED : BST_UNCHECKED);
-	else
-		Button_SetCheck(hitem, BST_CHECKED);
+	Button_SetCheck(hitem, gAGC ? BST_CHECKED : BST_UNCHECKED);
 }
 
 static void setAGC()
@@ -1224,7 +1228,6 @@ static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB)
 		ComboBox_AddString(hitem, TEXT("HIGH Threshold"));
 	}
 	ComboBox_SetCurSel(hitem, gAgcThresholdIdx);
-
 	if (supportsExtendedFunctions && callback && ExtIOCallBack)
 		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_AGC);
 }
@@ -1260,11 +1263,7 @@ static void updateMGCAtten(HWND hwndDlg, bool callback, bool bReFillCB)
 		ComboBox_AddString(hitem, TEXT("   42 dB"));	// 7
 		ComboBox_AddString(hitem, TEXT("   48 dB"));	// 8
 	}
-	if (supportsExtendedFunctions && !gAGC)
-		ComboBox_SetCurSel(hitem, gAttenIdx);
-	else
-		ComboBox_SetCurSel(hitem, 0);
-
+	ComboBox_SetCurSel(hitem, gAttenIdx);
 	if (supportsExtendedFunctions && callback && ExtIOCallBack)
 		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_ATT);
 }
