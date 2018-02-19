@@ -1307,11 +1307,7 @@ static UDACCEL ppbAccel[] =
 
 static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	static HBRUSH BRUSH_RED=CreateSolidBrush(RGB(255,0,0));
-	static HBRUSH BRUSH_GREEN=CreateSolidBrush(RGB(0,255,0));
-
 	// see https://www.codeproject.com/Articles/831/Using-the-CEdit-control
-
 	switch (uMsg)
 	{
 		case WM_INITDIALOG:
