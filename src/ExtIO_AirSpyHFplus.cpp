@@ -108,6 +108,7 @@ static volatile long LO_Frequency = 10 * 1000 * 1000L;	// default: 10 MHz
 
 static volatile int SampleRateIdx = 0;		// default = 2.3 MSps
 
+static bool gShow_HF_Controls = true;
 static volatile int supportsExtendedFunctions = 1;
 static volatile int gLNA = 0;		// 0 / 1
 static volatile int gAGC = 0;		// 0 / 1
@@ -162,6 +163,7 @@ static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void updateMGCAtten(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void setStatusCB(const char * text, bool bError = false);
 
+static void checkLO_for_HF_controls(long next_freq);
 static void setLNA();
 static void setMGCAtten();
 static void setAgcThreshold();
@@ -436,11 +438,41 @@ bool  LIBEXTIO_API __stdcall OpenHW()
 }
 
 
+static void checkLO_for_HF_controls(long next_freq)
+{
+	const long VHF_Limit = 60 * 1000 * 1000L;	// 60 MHz
+	const long HF_Limit = 31 * 1000 * 1000L;	// 31 MHz
+	const long prev_LO = LO_Frequency;
+	const bool prev_HF_ControlsVisible = gShow_HF_Controls;
+
+	if (dev && VHF_Limit <= prev_LO  &&  HF_Limit <= next_freq && next_freq < VHF_Limit)
+		airspyhf_set_freq(dev, uint32_t(HF_Limit / 2));
+
+	gShow_HF_Controls = (next_freq < VHF_Limit);
+	if (gShow_HF_Controls != prev_HF_ControlsVisible)
+	{
+		if (h_dialog)
+		{
+			updateLNA(h_dialog, false);
+			updateAGC(h_dialog, false, false);
+		}
+		if (ExtIOCallBack)
+			EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_RF_IF);
+		if (gShow_HF_Controls)
+		{
+			setLNA();
+			setAGC();
+		}
+	}
+}
+
+
 extern "C"
 long LIBEXTIO_API __stdcall SetHWLO(long freq)
 {
 	if (dev)
 	{
+		checkLO_for_HF_controls(freq);
 		retLast = airspyhf_set_freq(dev, uint32_t(freq));
 		LO_Frequency = freq;
 	}
@@ -830,7 +862,7 @@ void LIBEXTIO_API  __stdcall ExtIoSDRInfo(int extSDRInfo, int additionalValue, v
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoGetMGCs(int mgc_idx, float * gain)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 	{
 		switch (mgc_idx)
 		{
@@ -847,7 +879,7 @@ int LIBEXTIO_API  __stdcall ExtIoGetMGCs(int mgc_idx, float * gain)
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoGetActualMgcIdx(void)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 		return gLNA;
 	else
 		return -1;	// returns -1 on error
@@ -857,7 +889,7 @@ int LIBEXTIO_API  __stdcall ExtIoGetActualMgcIdx(void)
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoSetMGC(int mgc_idx)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 	{
 		const int prevLNA = gLNA;
 		gLNA = (mgc_idx >= 1) ? 1 : 0;	// workaround - to allow down-switching of AGC modes
@@ -876,7 +908,7 @@ int LIBEXTIO_API  __stdcall ExtIoSetMGC(int mgc_idx)
 extern "C"
 int LIBEXTIO_API  __stdcall GetAttenuators(int idx, float * attenuation)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 	{
 		if (!gAGC)
 		{
@@ -905,7 +937,7 @@ int LIBEXTIO_API  __stdcall GetAttenuators(int idx, float * attenuation)
 extern "C"
 int LIBEXTIO_API  __stdcall GetActualAttIdx(void)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 		if (!gAGC)
 			return 8 - gAttenIdx;
 	return -1;	// returns -1 on error
@@ -914,7 +946,7 @@ int LIBEXTIO_API  __stdcall GetActualAttIdx(void)
 extern "C"
 int LIBEXTIO_API  __stdcall SetAttenuator(int idx)
 {
-	if (supportsExtendedFunctions && idx >= 0 && idx <= 8)
+	if (supportsExtendedFunctions && gShow_HF_Controls && idx >= 0 && idx <= 8)
 	{
 		gAttenIdx = 8 - idx;
 		setMGCAtten();
@@ -929,7 +961,7 @@ int LIBEXTIO_API  __stdcall SetAttenuator(int idx)
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoGetAGCs(int agc_idx, char * text)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 	{
 		switch (agc_idx)
 		{
@@ -945,7 +977,7 @@ int LIBEXTIO_API  __stdcall ExtIoGetAGCs(int agc_idx, char * text)
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoGetActualAGCidx(void)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 	{
 		if (!gAGC)
 			return 0;
@@ -958,7 +990,7 @@ int LIBEXTIO_API  __stdcall ExtIoGetActualAGCidx(void)
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoSetAGC(int agc_idx)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 	{
 		switch (agc_idx)
 		{
@@ -978,7 +1010,7 @@ int LIBEXTIO_API  __stdcall ExtIoSetAGC(int agc_idx)
 extern "C"
 int LIBEXTIO_API  __stdcall ExtIoShowMGC(int agc_idx)
 {
-	if (supportsExtendedFunctions)
+	if (supportsExtendedFunctions && gShow_HF_Controls)
 		return 1;	// return 1, to continue showing MGC slider on AGC
 	return 0;		// return 0, is default for not showing MGC slider
 }
@@ -1172,7 +1204,7 @@ static inline void check_restart(int restart)
 static void updateLNA(HWND hwndDlg, bool callback)
 {
 	HWND hitem = GetDlgItem(hwndDlg, IDC_LNA_PREAMP);
-	Button_Enable(hitem, supportsExtendedFunctions ? TRUE : FALSE);
+	Button_Enable(hitem, (supportsExtendedFunctions && gShow_HF_Controls) ? TRUE : FALSE);
 	Button_SetCheck(hitem, gLNA ? BST_CHECKED : BST_UNCHECKED);
 	if (supportsExtendedFunctions && callback && ExtIOCallBack)
 		EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_MGC);
@@ -1194,7 +1226,7 @@ static void updateAGC(HWND hwndDlg, bool callback, bool bReFillCB)
 	updateAGCThresh(hwndDlg, callback, bReFillCB);
 	updateMGCAtten(hwndDlg, callback, bReFillCB);
 	HWND hitem = GetDlgItem(hwndDlg, IDC_AGC_ATTENS);
-	Button_Enable(hitem, supportsExtendedFunctions ? TRUE : FALSE);
+	Button_Enable(hitem, (supportsExtendedFunctions && gShow_HF_Controls) ? TRUE : FALSE);
 	Button_SetCheck(hitem, gAGC ? BST_CHECKED : BST_UNCHECKED);
 }
 
@@ -1225,7 +1257,7 @@ static void setAGC()
 static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB)
 {
 	HWND hitem = GetDlgItem(hwndDlg, IDC_AGC_THRESHOLD);
-	ComboBox_Enable(hitem, (supportsExtendedFunctions && gAGC) ? TRUE : FALSE);
+	ComboBox_Enable(hitem, (supportsExtendedFunctions && gShow_HF_Controls && gAGC) ? TRUE : FALSE);
 	if (bReFillCB)
 	{
 		ComboBox_ResetContent(hitem);
@@ -1253,8 +1285,8 @@ static void updateMGCAtten(HWND hwndDlg, bool callback, bool bReFillCB)
 {
 	HWND hitem = GetDlgItem(hwndDlg, IDC_MGC_ATTENS);
 	HWND hitemTxt = GetDlgItem(hwndDlg, IDC_ATT_TEXT);
-	Static_Enable(hitemTxt, (supportsExtendedFunctions && !gAGC) ? TRUE : FALSE);
-	ComboBox_Enable(hitem, (supportsExtendedFunctions && !gAGC) ? TRUE : FALSE);
+	Static_Enable(hitemTxt, (supportsExtendedFunctions && gShow_HF_Controls && !gAGC) ? TRUE : FALSE);
+	ComboBox_Enable(hitem, (supportsExtendedFunctions && gShow_HF_Controls && !gAGC) ? TRUE : FALSE);
 	if (bReFillCB)
 	{
 		ComboBox_ResetContent(hitem);
