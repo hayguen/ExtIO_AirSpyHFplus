@@ -837,6 +837,7 @@ int LIBEXTIO_API  __stdcall ExtIoGetMGCs(int mgc_idx, float * gain)
 		// sort by ascending gain: use idx 0 for lowest gain
 		case 0:	*gain = 0.0F;	return 0;
 		case 1:	*gain = 6.0F;	return 0;
+		case 2:	*gain = 6.1F;	return 0;	// workaround - to allow down-switching of AGC modes
 		default:	return 1;
 		}
 	}
@@ -858,10 +859,14 @@ int LIBEXTIO_API  __stdcall ExtIoSetMGC(int mgc_idx)
 {
 	if (supportsExtendedFunctions)
 	{
-		gLNA = mgc_idx;
-		setLNA();
-		if (h_dialog)
-			updateLNA(h_dialog, false);
+		const int prevLNA = gLNA;
+		gLNA = (mgc_idx >= 1) ? 1 : 0;	// workaround - to allow down-switching of AGC modes
+		if (prevLNA != gLNA)
+		{
+			setLNA();
+			if (h_dialog)
+				updateLNA(h_dialog, false);
+		}
 		return 0;
 	}
 	return -1;	// returns != 0 on error
