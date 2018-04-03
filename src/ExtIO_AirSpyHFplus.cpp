@@ -45,6 +45,8 @@
 
 #define EXTIO_BLOCKLEN_IN_IQ_FRAMES		8192
 
+#define WORKAROUND_MGC_AGC			1
+
 #define STOP_RESTART_FOR_PPB		1
 #define STOP_RESTART_FOR_LNA		0
 #define STOP_RESTART_FOR_MGC_ATT	0
@@ -869,7 +871,9 @@ int LIBEXTIO_API  __stdcall ExtIoGetMGCs(int mgc_idx, float * gain)
 		// sort by ascending gain: use idx 0 for lowest gain
 		case 0:	*gain = 0.0F;	return 0;
 		case 1:	*gain = 6.0F;	return 0;
+#if WORKAROUND_MGC_AGC
 		case 2:	*gain = 6.1F;	return 0;	// workaround - to allow down-switching of AGC modes
+#endif
 		default:	return 1;
 		}
 	}
