@@ -21,4 +21,4 @@
 #define IDC_AGC_THRESHOLD                       1015
 #define IDC_MGC_ATTENS                          1016
 #define IDC_ATT_TEXT                            1017
-
+#define IDC_DSP_ENABLE                          1018

@@ -116,6 +116,7 @@ static volatile int gLNA = 0;		// 0 / 1
 static volatile int gAGC = 0;		// 0 / 1
 static volatile int gAgcThresholdIdx = 0;	// 0 / 1
 static volatile int gAttenIdx = 0;	// 0 .. 8
+static volatile int gDSP = 1;		// 0 / 1
 
 static volatile int32_t FreqCorrPPB = 0;
 
@@ -163,6 +164,7 @@ static void updateLNA(HWND hwndDlg, bool callback);
 static void updateAGC(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void updateMGCAtten(HWND hwndDlg, bool callback, bool bReFillCB = true);
+static void updateDSP(HWND hwndDlg);
 static void setStatusCB(const char * text, bool bError = false);
 
 static void checkLO_for_HF_controls(long next_freq);
@@ -170,6 +172,7 @@ static void setLNA();
 static void setMGCAtten();
 static void setAgcThreshold();
 static void setAGC();
+static void setDSP();
 
 extern "C" void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value);
 extern "C" int   LIBEXTIO_API __stdcall ExtIoGetSetting(int idx, char * description, char * value);
@@ -203,6 +206,7 @@ static void setDefaults()
 	gAGC = 1;
 	gAgcThresholdIdx = 0;
 	gAttenIdx = 0;
+	gDSP = 1;
 }
 
 extern "C"
@@ -330,6 +334,7 @@ static void setupDevice()
 		else
 			airspyhf_set_hf_att(dev, uint8_t(gAttenIdx));
 	}
+	airspyhf_set_lib_dsp(dev, uint8_t(gDSP));
 
 	if (ExtIOCallBack)
 	{
@@ -646,6 +651,7 @@ typedef enum
 , CFG_AGC_ATTEN
 , CFG_AGC_THRESH
 , CFG_MGC_ATT
+, CFG_DSP_IQBAL
 , CFG_END
 } ConfigIdx;
 
@@ -710,6 +716,10 @@ int   LIBEXTIO_API __stdcall ExtIoGetSetting(int idx, char * description, char *
 		snprintf(description, 1024, "%s", "MGC Attenuation Idx (6 dB per Step)");
 		snprintf(value, 1024, "%d", gAttenIdx);
 		return 0;
+	case CFG_DSP_IQBAL:
+		snprintf(description, 1024, "%s", "DSP (I/Q-Balancing) Off/On");
+		snprintf(value, 1024, "%d", gDSP);
+		return 0;
 	default:
 		return -1;	// ERROR
 	}
@@ -748,6 +758,10 @@ void  LIBEXTIO_API __stdcall ExtIoSetSetting(int idx, const char * value)
 	case CFG_MGC_ATT:		gAttenIdx = atoi(value);
 		if (gAttenIdx < 0)		gAttenIdx = 0;
 		else if (gAttenIdx > 8)	gAttenIdx = 8;
+		return;
+	case CFG_DSP_IQBAL:
+		if (value[0])
+			gDSP = atoi(value) ? 1 : 0;
 		return;
 	default:	;
 	}
@@ -1319,6 +1333,20 @@ static void setMGCAtten()
 	}
 }
 
+static void updateDSP(HWND hwndDlg)
+{
+	HWND hitem = GetDlgItem(hwndDlg, IDC_DSP_ENABLE);
+	Button_Enable(hitem, TRUE);
+	Button_SetCheck(hitem, gDSP ? BST_CHECKED : BST_UNCHECKED);
+}
+
+static void setDSP()
+{
+	if (dev)
+		airspyhf_set_lib_dsp(dev, uint8_t(gDSP));
+}
+
+
 static void setStatusCB(const char * text, bool bError)
 {
 	snprintf(statusStr, 255, "%s", text);
@@ -1360,6 +1388,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 			updateLNA(hwndDlg, false);
 			updateAGC(hwndDlg, false);
 			updateFreqCorrCB(hwndDlg);
+			updateDSP(hwndDlg);
 			updateStatusCB(hwndDlg);
 
 			finishedInitDialog = true;
@@ -1377,6 +1406,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 				updateLNA(hwndDlg, false);
 				updateAGC(hwndDlg, false);
 				updateFreqCorrCB(hwndDlg);
+				updateDSP(hwndDlg);
 				updateStatusCB(hwndDlg);
 			}
 			return TRUE;
@@ -1529,6 +1559,13 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 						setMGCAtten();
 						updateMGCAtten(hwndDlg, true, false);	// callback, no ReFill
 					}
+					return TRUE;
+
+				case IDC_DSP_ENABLE:
+					gDSP = (Button_GetCheck(GET_WM_COMMAND_HWND(wParam, lParam)) == BST_CHECKED) ? 1 : 0;
+					SDRLOG(extHw_MSG_DEBUG, "Dialog: DSP:I/Q Balancer is now %s", (gDSP ? "On" : "Off"));
+					setDSP();
+					updateDSP(hwndDlg);
 					return TRUE;
 
 				case IDC_GPIOA:
