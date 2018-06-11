@@ -160,6 +160,7 @@ static void updateDevVerStrCB(HWND hwndDlg);
 static void updateLibVerStrCB(HWND hwndDlg);
 static void updateFreqCorrCB(HWND hwndDlg);
 static void updateStatusCB(HWND hwndDlg);
+static void updateControlHint(HWND hwndDlg);
 static void updateLNA(HWND hwndDlg, bool callback);
 static void updateAGC(HWND hwndDlg, bool callback, bool bReFillCB = true);
 static void updateAGCThresh(HWND hwndDlg, bool callback, bool bReFillCB = true);
@@ -460,6 +461,7 @@ static void checkLO_for_HF_controls(long next_freq)
 	{
 		if (h_dialog)
 		{
+      updateControlHint(h_dialog);
 			updateLNA(h_dialog, false);
 			updateAGC(h_dialog, false, false);
 		}
@@ -467,6 +469,7 @@ static void checkLO_for_HF_controls(long next_freq)
 			EXTIO_STATUS_CHANGE(ExtIOCallBack, extHw_Changed_RF_IF);
 		if (gShow_HF_Controls)
 		{
+      updateControlHint(h_dialog);
 			setLNA();
 			setAGC();
 		}
@@ -1218,6 +1221,27 @@ static inline void check_restart(int restart)
 		airspyhf_start(dev, airspyhf_sample_block_cb, NULL);
 }
 
+static void updateControlHint(HWND hwndDlg)
+{
+  HWND hitem = GetDlgItem(hwndDlg, IDC_CONTROL_HINT);
+  if (supportsExtendedFunctions)
+  {
+    if (gShow_HF_Controls)
+    {
+      ShowWindow(hitem, SW_HIDE);
+    }
+    else
+    {
+      Static_SetText(hitem, TEXT("NOT in HF range!"));
+      ShowWindow(hitem, SW_SHOW);
+    }
+  }
+  else
+  {
+    Static_SetText(hitem, TEXT("Old Firmware!"));
+    ShowWindow(hitem, SW_SHOW);
+  }
+}
 
 static void updateLNA(HWND hwndDlg, bool callback)
 {
@@ -1385,6 +1409,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 			updateGPIOCBs(hwndDlg);
 			updateDevVerStrCB(hwndDlg);
 			updateLibVerStrCB(hwndDlg);
+      updateControlHint(hwndDlg);
 			updateLNA(hwndDlg, false);
 			updateAGC(hwndDlg, false);
 			updateFreqCorrCB(hwndDlg);
@@ -1403,6 +1428,7 @@ static INT_PTR CALLBACK MainDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPAR
 				updateGPIOCBs(hwndDlg);
 				updateDevVerStrCB(hwndDlg);
 				updateLibVerStrCB(hwndDlg);
+        updateControlHint(hwndDlg);
 				updateLNA(hwndDlg, false);
 				updateAGC(hwndDlg, false);
 				updateFreqCorrCB(hwndDlg);

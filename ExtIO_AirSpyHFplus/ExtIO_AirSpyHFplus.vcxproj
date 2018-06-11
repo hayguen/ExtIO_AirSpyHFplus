@@ -64,6 +64,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>libusb-1.0.lib;pthread.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>..\src\exports.def</ModuleDefinitionFile>
+      <Version>2018.8</Version>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -89,7 +90,7 @@
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalDependencies>libusb-1.0.lib;pthread.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <ModuleDefinitionFile>..\src\exports.def</ModuleDefinitionFile>
-      <Version>2018.7</Version>
+      <Version>2018.8</Version>
       <AssemblyDebug>false</AssemblyDebug>
       <StripPrivateSymbols>/PDBSTRIPPED</StripPrivateSymbols>
     </Link>
